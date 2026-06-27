@@ -30,3 +30,25 @@ class Analysis:
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class TokenResult:
+    """One token's in-context (Layer-2) disambiguation result.
+
+    Mirrors AlKhalil's ``ADATAnalyzer`` outputs: ``lemma`` is the single analysis
+    chosen by the HMM, ``stem`` / ``root`` are then the highest-corpus-frequency
+    stem/root among the analyses sharing that lemma (lemmatizer / light stemmer /
+    heavy stemmer respectively). ``analyzed`` is ``False`` for tokens the analyzer
+    could not analyze, in which case lemma/stem/root all fall back to ``token``.
+    All strings are Arabic script.
+    """
+
+    token: str
+    lemma: str
+    stem: str
+    root: str
+    analyzed: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)

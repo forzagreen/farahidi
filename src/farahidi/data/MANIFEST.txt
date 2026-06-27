@@ -44,6 +44,9 @@ DATA.Derived.Verbs.Roots.id.Quadriliteral.map.jsonl	54938	6ffe2a00290fbeda
 DATA.Derived.Verbs.Roots.id.Quadriliteral2.map.jsonl	54938	6ffe2a00290fbeda
 DATA.Derived.Verbs.Roots.id.Trilateral.map.jsonl	161644	58f0e392226d56b6
 DATA.Exceptional.map.jsonl	2217	6351bfd8860f370a
+DATA.MSA-LEMMA.ALL-train.map.jsonl	1993409	ccec6796754616a0
+DATA.MSA.SHA.ROOT.map.jsonl	210763	61002bfaa5dca09e
+DATA.MSA.SHA.STEM.map.jsonl	8329795	fd53db5602d89c67
 DATA.NonDerived.Propernoun.CaseOrMood.list.jsonl	163	fea03700dc39d856
 DATA.NonDerived.Propernoun.PartOfSpeech.list.jsonl	10638	91eaef12a84ee60a
 DATA.NonDerived.Propernoun.Unvoweled.map.jsonl	518134	a80c34854b94707a
@@ -52,3 +55,4 @@ DATA.NonDerived.Toolwords.PartOfSpeech.list.jsonl	1976	03e899b4c8566989
 DATA.NonDerived.Toolwords.Unvoweled.map.jsonl	12477	a0c7caea639a2c99
 DATA.NonDerived.Toolwords.Voweled.list.jsonl	86732	dac90b8e57b69e7b
 DATA.Root.map.jsonl	237788	03505f2a894c9c36
+DATA.MSA.ALL.TRAIN.141809.lm	14244045	1c49d30c0098d37a

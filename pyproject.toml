@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "farahidi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Arabic morphological analyzer — a pure-Python port of AlKhalil Morpho Sys 2"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,11 +48,11 @@ dev = ["pytest>=8", "ruff>=0.6"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/farahidi"]
-artifacts = ["src/farahidi/data/*.jsonl.gz"]
+artifacts = ["src/farahidi/data/*.jsonl.gz", "src/farahidi/data/*.lm.gz"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/farahidi", "tests", "tools", "README.md", "LICENSE", "NOTICE"]
-artifacts = ["src/farahidi/data/*.jsonl.gz"]
+artifacts = ["src/farahidi/data/*.jsonl.gz", "src/farahidi/data/*.lm.gz"]
 
 [tool.ruff]
 # Slightly generous: several conditions compare long Arabic string literals

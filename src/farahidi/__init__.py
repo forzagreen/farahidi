@@ -17,15 +17,29 @@ from __future__ import annotations
 from functools import lru_cache
 
 from .analyzer import Analyzer
-from .models import Analysis
+from .disambiguate import Disambiguator
+from .models import Analysis, TokenResult
 
-__all__ = ["Analyzer", "Analysis", "analyze", "__version__"]
-__version__ = "0.1.0"
+__all__ = [
+    "Analyzer",
+    "Analysis",
+    "Disambiguator",
+    "TokenResult",
+    "analyze",
+    "analyze_text",
+    "__version__",
+]
+__version__ = "0.2.0"
 
 
 @lru_cache(maxsize=1)
 def _default_analyzer() -> Analyzer:
     return Analyzer()
+
+
+@lru_cache(maxsize=1)
+def _default_disambiguator() -> Disambiguator:
+    return Disambiguator(analyzer=_default_analyzer())
 
 
 def analyze(word: str) -> list[Analysis]:
@@ -34,3 +48,10 @@ def analyze(word: str) -> list[Analysis]:
     Uses a shared module-level :class:`Analyzer`.
     """
     return _default_analyzer().analyze(word)
+
+
+def analyze_text(text: str) -> list[TokenResult]:
+    """In-context analysis: one chosen lemma/stem/root per word token across the
+    sentence(s) in ``text``. Uses a shared module-level :class:`Disambiguator`.
+    """
+    return _default_disambiguator().analyze_text(text)

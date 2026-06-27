@@ -8,9 +8,10 @@ Given an Arabic word, `farahidi` returns every valid morphological analysis —
 and segmented proclitics/enclitics** — ranked by corpus frequency.
 
 - **Pure Python, zero dependencies.** Works on CPython 3.11 – 3.14.
-- **Offline.** The full lexicon (~404k records) ships compressed inside the wheel
-  (~7 MB); nothing is downloaded at runtime.
-- **Faithful.** Output is validated against the original Java `AlKhalil2Analyzer`.
+- **Offline.** The full lexicon plus the in-context language model ship compressed
+  inside the wheel (~11 MB); nothing is downloaded at runtime.
+- **Faithful.** Output is validated against the original Java `AlKhalil2Analyzer`
+  (single-word) and `ADATAnalyzer` (in-context).
 
 > Named after **al-Khalīl ibn Aḥmad al-Farāhīdī** (الخليل بن أحمد الفراهيدي), the
 > 8th-century founder of Arabic lexicography and prosody.
@@ -59,11 +60,36 @@ az = Analyzer()
 results = az.analyze("مدرسة")
 ```
 
+### In-context disambiguation
+
+`analyze_text()` picks the single best analysis per token across a sentence,
+returning one `TokenResult` per word with the chosen `lemma`, `stem`, and `root`:
+
+```python
+import farahidi
+
+for r in farahidi.analyze_text("ذهب الولد إلى المدرسة"):
+    print(r.token, r.lemma, r.stem, r.root)
+# ذهب ذَهَبَ ذَهَب ذهب
+# الولد وَلَد وَلَد ولد
+# إلى إِلَى إِلَى -
+# المدرسة مَدْرَسَة مَدْرَسَة درس
+```
+
+A reusable `Disambiguator` is also exposed; `disambiguate(tokens)` takes a
+pre-tokenized list. `TokenResult.analyzed` is `False` for tokens the analyzer
+could not analyze (lemma/stem/root then fall back to the token).
+
 ## Scope
 
-This release implements **Layer 1**: out-of-context analysis of a single word,
-returning all candidates ranked by frequency. In-context disambiguation
-(Layer 2: an HMM/Viterbi decode over a sentence) is planned for a later release.
+- **Layer 1** — out-of-context analysis of a single word (`analyze`), returning
+  all candidates ranked by frequency.
+- **Layer 2** — in-context disambiguation (`analyze_text` / `Disambiguator`), a
+  faithful port of AlKhalil's shipped `ADATAnalyzer` (lemmatizer + light/heavy
+  stemmer). The chosen lemma is exact; the stem/root are then selected by corpus
+  frequency among that lemma's analyses. On exact frequency ties the pick depends
+  on analysis enumeration order, which can differ from the Java reference (its
+  decoder draws stems/roots from a `HashSet`); the lemma decode is unaffected.
 
 ## Data & license
 
@@ -83,4 +109,6 @@ uv run ruff check
 
 The bundled data is regenerated from the parent `morph-analyzer` export with
 `python tools/build_data.py`. Golden test fixtures are produced from the Java
-reference with `tools/AlkhalilGolden.java` (see `tools/gen_golden.py`).
+reference with `tools/gen_golden.py`: `--mode words` (Layer 1, via
+`AlkhalilGolden.java`) and `--mode sentences` (Layer 2, via
+`AlkhalilSentenceGolden.java`).
