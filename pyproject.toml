@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "farahidi"
+version = "0.1.0"
+description = "Arabic morphological analyzer — a pure-Python port of AlKhalil Morpho Sys 2"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Wael Tellat", email = "wael.tellat@gmail.com" }]
+keywords = [
+    "arabic",
+    "morphology",
+    "nlp",
+    "morphological-analyzer",
+    "lemmatizer",
+    "stemmer",
+    "alkhalil",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Natural Language :: Arabic",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/forzagreen/farahidi"
+Repository = "https://github.com/forzagreen/farahidi"
+Issues = "https://github.com/forzagreen/farahidi/issues"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/farahidi"]
+artifacts = ["src/farahidi/data/*.jsonl.gz"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/farahidi", "tests", "tools", "README.md", "LICENSE", "NOTICE"]
+artifacts = ["src/farahidi/data/*.jsonl.gz"]
+
+[tool.ruff]
+# Slightly generous: several conditions compare long Arabic string literals
+# that don't wrap cleanly.
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

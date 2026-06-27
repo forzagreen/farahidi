@@ -1,0 +1,28 @@
+farahidi
+Copyright (C) 2026 Wael Tellat
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License v3 (or, at your option, any later
+version). See the LICENSE file for the full text.
+
+------------------------------------------------------------------------------
+THIRD-PARTY / UPSTREAM ATTRIBUTION
+------------------------------------------------------------------------------
+
+This library is a re-implementation of, and bundles linguistic data from:
+
+    AlKhalil Morpho Sys 2
+    Arabic Language Processing Team (Oujda NLP Team), Université Mohammed
+    Premier, Oujda, Morocco.
+    Authors: Azzeddine Mazroui, Mohamed Boudchiche, et al.
+    https://alkhalil.oujda-nlp-team.net/
+    Licensed under the GNU General Public License v3.
+
+The morphological lexicon shipped under `src/farahidi/data/` (roots, patterns,
+formulas, part-of-speech tables, clitics, proper nouns, tool words and corpus
+frequency tables) is derived from AlKhalil Morpho Sys 2's resources and remains
+under the GPL-3.0. All credit for the underlying linguistic database and
+analysis model belongs to the Oujda NLP Team.
+
+If you use this library in academic work, please also cite the original
+AlKhalil Morpho Sys 2 publications by the Oujda NLP Team.
