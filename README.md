@@ -1,7 +1,8 @@
 # farahidi
 
 **Arabic morphological analyzer for Python** — a pure-Python re-implementation of
-[AlKhalil Morpho Sys 2](https://alkhalil.oujda-nlp-team.net/) (Oujda NLP Team).
+[AlKhalil Morpho Sys 2](https://alkhalil.oujda-nlp-team.net/AlKhalil-MorphoSys.php)
+(Oujda NLP Team).
 
 Given an Arabic word, `farahidi` returns every valid morphological analysis —
 **root, lemma, stem, pattern (wazn), part of speech with full features, case/mood,
@@ -12,6 +13,12 @@ and segmented proclitics/enclitics** — ranked by corpus frequency.
   inside the wheel (~11 MB); nothing is downloaded at runtime.
 - **Faithful.** Output is validated against the original Java `AlKhalil2Analyzer`
   (single-word) and `ADATAnalyzer` (in-context).
+
+This is the Python implementation. A 1:1 JavaScript / TypeScript port lives at
+[`farahidi-js`](https://github.com/forzagreen/farahidi-js), with a live
+[in-browser demo](https://forzagreen.github.io/farahidi-js/). Both re-implement the
+original Java [AlKhalil Morpho Sys 2](https://alkhalil.oujda-nlp-team.net/AlKhalil-MorphoSys.php)
+by the Oujda NLP Team.
 
 > Named after **al-Khalīl ibn Aḥmad al-Farāhīdī** (الخليل بن أحمد الفراهيدي), the
 > 8th-century founder of Arabic lexicography and prosody.
