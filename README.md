@@ -80,6 +80,32 @@ A reusable `Disambiguator` is also exposed; `disambiguate(tokens)` takes a
 pre-tokenized list. `TokenResult.analyzed` is `False` for tokens the analyzer
 could not analyze (lemma/stem/root then fall back to the token).
 
+## Command line
+
+Installing the package also provides a `farahidi` command with two subcommands
+mirroring the two entry points:
+
+```bash
+# Layer 1 — every analysis of each word
+farahidi analyze الكتاب لأنهم
+
+# Layer 2 — one disambiguated result per token, in context
+farahidi text "ذهب الولد إلى المدرسة"
+# ذهب     ذَهَبَ    ذَهَب    ذهب
+# الولد   وَلَد     وَلَد    ولد
+# إلى     إِلَى     إِلَى    -
+# المدرسة مَدْرَسَة مَدْرَسَة درس
+```
+
+Add `--json` to either subcommand for JSON Lines output (one object per word for
+`analyze`, one per token for `text`). With no positional argument both read from
+stdin — `analyze` splits it on whitespace into words, `text` treats it as the
+text to tokenize:
+
+```bash
+echo "مدرسة كتاب" | farahidi analyze --json
+```
+
 ## Scope
 
 - **Layer 1** — out-of-context analysis of a single word (`analyze`), returning
@@ -90,6 +116,10 @@ could not analyze (lemma/stem/root then fall back to the token).
   frequency among that lemma's analyses. On exact frequency ties the pick depends
   on analysis enumeration order, which can differ from the Java reference (its
   decoder draws stems/roots from a `HashSet`); the lemma decode is unaffected.
+
+`farahidi` is a **morphological analyzer** — it ports AlKhalil Morpho Sys 2 in full
+(both shipped layers). It is *not* a POS tagger or a syntactic/dependency parser;
+those are separate systems that consume an analyzer's output and are out of scope.
 
 ## Data & license
 

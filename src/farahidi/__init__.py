@@ -29,7 +29,7 @@ __all__ = [
     "analyze_text",
     "__version__",
 ]
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 @lru_cache(maxsize=1)

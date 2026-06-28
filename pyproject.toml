@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "farahidi"
-version = "0.2.0"
+version = "0.3.0"
 description = "Arabic morphological analyzer — a pure-Python port of AlKhalil Morpho Sys 2"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,13 +38,20 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+farahidi = "farahidi.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/forzagreen/farahidi"
 Repository = "https://github.com/forzagreen/farahidi"
 Issues = "https://github.com/forzagreen/farahidi/issues"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = [
+    "ipykernel>=7.3.0",
+    "pytest>=8",
+    "ruff>=0.6",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/farahidi"]
