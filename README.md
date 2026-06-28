@@ -90,20 +90,31 @@ mirroring the two entry points:
 farahidi analyze الكتاب لأنهم
 
 # Layer 2 — one disambiguated result per token, in context
-farahidi text "ذهب الولد إلى المدرسة"
-# ذهب     ذَهَبَ    ذَهَب    ذهب
-# الولد   وَلَد     وَلَد    ولد
-# إلى     إِلَى     إِلَى    -
-# المدرسة مَدْرَسَة مَدْرَسَة درس
+farahidi text "ذهب الولد إلى المدرسة" --format table
+# token    lemma  stem   root  analyzed
+# -------  -----  -----  ----  --------
+# ذهب      ذَهَبَ    ذَهَب    ذهب   true
+# الولد    وَلَد    وَلَد    ولد   true
+# إلى      إِلَى    إِلَى    -     true
+# المدرسة  مَدْرَسَة  مَدْرَسَة  درس   true
 ```
 
-Add `--json` to either subcommand for JSON Lines output (one object per word for
-`analyze`, one per token for `text`). With no positional argument both read from
-stdin — `analyze` splits it on whitespace into words, `text` treats it as the
-text to tokenize:
+Pick the output with `-f/--format`:
+
+| format | description |
+|---|---|
+| `raw` *(default)* | TAB-separated, one record per line, no header — pipe to `cut`/`awk` |
+| `table` | aligned columns with a header (best-effort: Arabic combining marks are measured correctly, but RTL terminals may still reorder cells) |
+| `json` | JSON Lines — `analyze` nests every analysis under its word; `text` emits one token result per line |
+| `csv` | RFC-4180 with a header row — open in a spreadsheet or load with pandas |
+
+The flat formats (`raw`/`table`/`csv`) share one column schema; `json` keeps the
+nested structure. With no positional argument both subcommands read from stdin —
+`analyze` splits it on whitespace into words, `text` treats it as the text to
+tokenize:
 
 ```bash
-echo "مدرسة كتاب" | farahidi analyze --json
+echo "مدرسة كتاب" | farahidi analyze -f csv
 ```
 
 ## Scope
