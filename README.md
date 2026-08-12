@@ -1,5 +1,10 @@
 # farahidi
 
+[![PyPI](https://img.shields.io/pypi/v/farahidi)](https://pypi.org/project/farahidi/)
+[![Python versions](https://img.shields.io/pypi/pyversions/farahidi)](https://pypi.org/project/farahidi/)
+[![CI](https://github.com/forzagreen/farahidi/actions/workflows/ci.yml/badge.svg)](https://github.com/forzagreen/farahidi/actions/workflows/ci.yml)
+[![License](https://img.shields.io/pypi/l/farahidi)](LICENSE)
+
 **Arabic morphological analyzer for Python** — a pure-Python re-implementation of
 [AlKhalil Morpho Sys 2](https://alkhalil.oujda-nlp-team.net/AlKhalil-MorphoSys.php)
 (Oujda NLP Team).
