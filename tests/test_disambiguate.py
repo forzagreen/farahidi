@@ -31,10 +31,12 @@ _DIS = Disambiguator()
 def _cases():
     for rec in RECORDS:
         results = _DIS.disambiguate(rec["tokens"])
+        # The Java reference writes "-" for "no root" and the token itself for
+        # unanalyzable tokens; farahidi uses None for both.
         got = {
             "lemmas": [r.lemma for r in results],
             "stems": [r.stem for r in results],
-            "roots": [r.root for r in results],
+            "roots": [r.root if r.root is not None else ("-" if r.analyzed else r.token) for r in results],
         }
         for field in ("lemmas", "stems", "roots"):
             for idx, token in enumerate(rec["tokens"]):

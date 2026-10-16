@@ -2,12 +2,19 @@
 
 Two subcommands mirror the library's two entry points:
 
-    farahidi analyze الكتاب          # Layer 1: every analysis of each word
+    farahidi analyze الكتاب          # Layer 1: every morphological analysis of each word
     farahidi text "ذهب الولد"         # Layer 2: one result per token, in context
 
 Each accepts ``-f/--format {raw,table,json,csv}`` (default ``raw``) and reads from
 stdin when given no positional argument (``analyze`` splits stdin on whitespace
 into words; ``text`` treats it as the text to tokenize).
+
+``analyze`` prints one record per morphological reading; the إعراب variants
+(case/mood, definiteness state, fully vowelled form) are nested under
+``inflections`` in JSON and omitted from the flat formats. ``-i/--inflections``
+expands them instead: one record per *(reading × ending)*, with the extra
+``inflected`` / ``case`` / ``mood`` / ``state`` columns, as the original AlKhalil
+output did.
 
 Output formats:
 
@@ -30,27 +37,39 @@ import json
 import sys
 import unicodedata
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from . import __version__, analyze, analyze_text
 from .models import Analysis, TokenResult
 
 # Flat-format column schemas. ``analyze`` denormalizes: the input word is repeated
-# on every analysis row; ``text`` is one row per token.
+# on every row; ``text`` is one row per token.
 _ANALYSIS_FIELDS = (
-    "voweled_word",
-    "proclitic",
-    "stem",
-    "part_of_speech",
-    "diac_pattern_stem",
-    "pattern_stem",
+    "diacritized",
     "lemma",
-    "pattern_lemma",
     "root",
-    "case_or_mood",
-    "enclitic",
-    "priority",
+    "stem",
+    "pattern",
+    "lemma_pattern",
+    "pos",
+    "type",
+    "tense",
+    "gender",
+    "number",
+    "person",
+    "pronoun",
+    "voice",
+    "transitivity",
+    "augmentation",
+    "emphatic",
+    "proclitics",
+    "prefixes",
+    "suffixes",
+    "enclitics",
 )
-_ANALYZE_COLUMNS = ("word", *_ANALYSIS_FIELDS)
+_INFLECTION_FIELDS = ("inflected", "case", "mood", "state")
+_ANALYZE_COLUMNS = ("word", *_ANALYSIS_FIELDS, "score")
+_INFLECTED_COLUMNS = ("word", *_ANALYSIS_FIELDS, *_INFLECTION_FIELDS, "score")
 _TEXT_COLUMNS = ("token", "lemma", "stem", "root", "analyzed")
 
 
@@ -62,6 +81,17 @@ def _display_width(s: str) -> int:
 
 def _pad(s: str, width: int) -> str:
     return s + " " * (width - _display_width(s))
+
+
+def _cell(value: Any) -> str:
+    """Render one field for the flat formats."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, tuple | list):
+        return ", ".join(a["form"] + (f" ({a['description']})" if a.get("description") else "") for a in value)
+    return str(value)
 
 
 def _emit_json(obj: object) -> None:
@@ -96,21 +126,39 @@ _FLAT_WRITERS = {"raw": _write_raw, "table": _write_table, "csv": _write_csv}
 
 
 # ----------------------------------------------------------------- subcommands
-def _analysis_row(word: str, a: Analysis) -> list[str]:
-    return [word, *(getattr(a, f) for f in _ANALYSIS_FIELDS)]
+def _records(a: Analysis, inflections: bool) -> list[dict[str, Any]]:
+    """One dict per output record for analysis ``a``: the analysis itself, or
+    (with ``inflections``) one flattened dict per inflection."""
+    d = a.to_dict()
+    if not inflections:
+        return [d]
+    del d["inflections"]
+    out = []
+    for infl in a.inflections:
+        rec = dict(d)
+        rec.update(inflected=infl.diacritized, case=infl.case, mood=infl.mood, state=infl.state, score=infl.score)
+        out.append(rec)
+    return out
 
 
 def _token_row(r: TokenResult) -> list[str]:
-    return [r.token, r.lemma, r.stem, r.root, "true" if r.analyzed else "false"]
+    return [r.token, r.lemma, r.stem, _cell(r.root), _cell(r.analyzed)]
 
 
-def _cmd_analyze(words: list[str], fmt: str) -> None:
+def _cmd_analyze(words: list[str], fmt: str, inflections: bool) -> None:
     if fmt == "json":
         for word in words:
-            _emit_json({"word": word, "analyses": [a.to_dict() for a in analyze(word)]})
+            recs = [rec for a in analyze(word) for rec in _records(a, inflections)]
+            _emit_json({"word": word, "analyses": recs})
         return
-    rows = [_analysis_row(word, a) for word in words for a in analyze(word)]
-    _FLAT_WRITERS[fmt](_ANALYZE_COLUMNS, rows)
+    columns = _INFLECTED_COLUMNS if inflections else _ANALYZE_COLUMNS
+    rows = [
+        [word, *(_cell(rec[c]) for c in columns[1:])]
+        for word in words
+        for a in analyze(word)
+        for rec in _records(a, inflections)
+    ]
+    _FLAT_WRITERS[fmt](columns, rows)
 
 
 def _cmd_text(text: str, fmt: str) -> None:
@@ -152,9 +200,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_analyze = sub.add_parser(
         "analyze",
-        help="out-of-context: list every analysis of each word (Layer 1)",
+        help="out-of-context: list every morphological analysis of each word (Layer 1)",
     )
     p_analyze.add_argument("words", nargs="*", help="words to analyze (default: read from stdin)")
+    p_analyze.add_argument(
+        "-i",
+        "--inflections",
+        action="store_true",
+        help="one record per إعراب variant (case/mood + fully vowelled form) instead of one per reading",
+    )
     _add_format_arg(p_analyze)
 
     p_text = sub.add_parser(
@@ -172,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "analyze":
         words = args.words or sys.stdin.read().split()
-        _cmd_analyze(words, args.format)
+        _cmd_analyze(words, args.format, args.inflections)
     elif args.command == "text":
         text = " ".join(args.text) if args.text else sys.stdin.read()
         _cmd_text(text, args.format)

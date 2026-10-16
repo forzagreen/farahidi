@@ -16,6 +16,17 @@ def test_remove_last_diacritics_keeps_shadda():
     assert N.remove_last_diacritics("أَنّ") == "أَنّ"  # trailing shadda kept
 
 
+def test_strip_case_ending():
+    assert N.strip_case_ending("عَنْدَلِيبٌ") == "عَنْدَلِيب"
+    assert N.strip_case_ending("يَكْتُبْ") == "يَكْتُب"
+    assert N.strip_case_ending("قَالٌّ") == "قَالّ"  # shadda kept
+    assert N.strip_case_ending("مُسْلِمُونَ") == "مُسْلِمُون"  # letters never removed
+    assert N.strip_case_ending("كِتَابًا") == "كِتَابَا"  # tanween fatḥ + alif → fatḥa
+    assert N.strip_case_ending("فَتًى") == "فَتَى"
+    assert N.strip_case_ending("يَكْتُبُوا") == "يَكْتُبُوا"  # nothing to strip
+    assert N.strip_case_ending("") == ""
+
+
 def test_normalize_hamza_folds_carriers():
     assert N.normalize_hamza("سأل") == "سءل"
     assert N.normalize_hamza("مؤمن") == "مءمن"

@@ -2,8 +2,10 @@
 
 ``tests/fixtures/golden.jsonl`` holds, per word, every analysis produced by the
 original ``AlKhalil2Analyzer.processToken`` (12 fields each). We require the
-Python port to reproduce the exact same multiset of analyses, and that the
-top-ranked candidate matches after sorting by ``priority``.
+port's raw records (``Analyzer._process_token``, one per reading × إعراب ending)
+to reproduce the exact same multiset, and the top-ranked record to match after
+sorting by ``priority``. The public ``analyze()`` is checked against those raw
+records in ``test_analysis.py``.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 import farahidi
+from farahidi.analyzer import RawAnalysis
 
 FIXTURE = Path(__file__).parent / "fixtures" / "golden.jsonl"
 
@@ -53,7 +56,7 @@ def _gtuple(a: dict) -> tuple:
     return tuple(a[k] for k in KEYMAP)
 
 
-def _ptuple(a: farahidi.Analysis) -> tuple:
+def _ptuple(a: RawAnalysis) -> tuple:
     return tuple(getattr(a, v) for v in KEYMAP.values())
 
 
@@ -65,7 +68,7 @@ def analyzer() -> farahidi.Analyzer:
 @pytest.mark.parametrize("word,analyses", GOLDEN, ids=[w for w, _ in GOLDEN])
 def test_multiset_matches_reference(analyzer, word, analyses):
     expected = Counter(_gtuple(a) for a in analyses)
-    got = Counter(_ptuple(a) for a in analyzer.process_token(word))
+    got = Counter(_ptuple(a) for a in analyzer._process_token(word))
     assert got == expected
 
 
@@ -77,7 +80,7 @@ def test_top_ranked_matches_reference(analyzer, word, analyses):
         pytest.skip("no analyses")
     best_priority = max(a["priority"] for a in analyses)
     expected_best = {_gtuple(a) for a in analyses if a["priority"] == best_priority}
-    ranked = analyzer.analyze(word)
+    ranked = sorted(analyzer._process_token(word), key=lambda a: a.priority, reverse=True)
     assert ranked, f"no analyses for {word}"
     assert _ptuple(ranked[0]) in expected_best
 
