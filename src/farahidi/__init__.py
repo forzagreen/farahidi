@@ -4,12 +4,14 @@ Quick start::
 
     import farahidi
 
-    for a in farahidi.analyze("لأنهم"):
-        print(a.voweled_word, a.lemma, a.root, a.part_of_speech)
+    for a in farahidi.analyze("بالمدرسة"):
+        print(a.diacritized, a.lemma, a.root, a.pos, a.type)
 
-:func:`analyze` returns a list of :class:`Analysis` candidates sorted by
-``priority`` (most frequent first). For repeated use, build an :class:`Analyzer`
-once and reuse it — the bundled lexicon loads lazily and is shared across calls.
+:func:`analyze` returns the word's *morphological* readings as
+:class:`Analysis` objects, best ``score`` first. The syntactic case/mood endings
+(الإعراب) of each reading are nested under ``Analysis.inflections`` rather than
+multiplying the results. For repeated use, build an :class:`Analyzer` once and
+reuse it — the bundled lexicon loads lazily and is shared across calls.
 """
 
 from __future__ import annotations
@@ -17,19 +19,22 @@ from __future__ import annotations
 from functools import lru_cache
 
 from .analyzer import Analyzer
-from .disambiguate import Disambiguator
-from .models import Analysis, TokenResult
+from .disambiguate import Disambiguator, tokenize
+from .models import Affix, Analysis, Inflection, TokenResult
 
 __all__ = [
+    "Affix",
     "Analyzer",
     "Analysis",
     "Disambiguator",
+    "Inflection",
     "TokenResult",
     "analyze",
     "analyze_text",
+    "tokenize",
     "__version__",
 ]
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 @lru_cache(maxsize=1)
@@ -43,9 +48,8 @@ def _default_disambiguator() -> Disambiguator:
 
 
 def analyze(word: str) -> list[Analysis]:
-    """Return all analyses of ``word``, sorted by ``priority`` (descending).
-
-    Uses a shared module-level :class:`Analyzer`.
+    """Return all morphological analyses of ``word``, sorted by ``score``
+    (descending). Uses a shared module-level :class:`Analyzer`.
     """
     return _default_analyzer().analyze(word)
 

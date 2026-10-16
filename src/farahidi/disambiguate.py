@@ -70,7 +70,7 @@ class Disambiguator:
         cached = self._morph.get(token)
         if cached is not None:
             return cached
-        analyses = self.analyzer.process_token(token)
+        analyses = self.analyzer._process_token(token)
         if not analyses:
             res = ([token], False)
         else:
@@ -192,14 +192,14 @@ class Disambiguator:
 
     # --------------------------------------------------------- stem / root
     def _select_by_freq(self, token: str, lemma: str, analyzed: bool, attr: str, freq_map: dict[str, int]) -> str:
-        """Highest-corpus-frequency ``attr`` (``stem``/``root``) among analyses
-        sharing ``lemma`` — port of ``getStems`` / ``getRoots`` (list order,
-        first-on-tie). Unanalyzable token → the token itself."""
+        """Highest-corpus-frequency ``attr`` (``stem``/``root``) among the raw
+        analyses sharing ``lemma`` — port of ``getStems`` / ``getRoots`` (list
+        order, first-on-tie). Unanalyzable token → the token itself."""
         if not analyzed:
             return token
         best: str | None = None
         best_val = 0
-        for a in self.analyzer.process_token(token):
+        for a in self.analyzer._process_token(token):
             if a.lemma == lemma:
                 value = getattr(a, attr)
                 val = freq_map.get(value, 0)
@@ -224,7 +224,9 @@ class Disambiguator:
                     token=token,
                     lemma=lemma if analyzed else token,
                     stem=stem,
-                    root=root,
+                    # AlKhalil's "-" (no root) and its unanalyzable fallback (the
+                    # token itself) both mean "no root known".
+                    root=root if analyzed and root != "-" else None,
                     analyzed=analyzed,
                 )
             )

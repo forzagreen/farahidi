@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from farahidi.cli import _ANALYZE_COLUMNS, _TEXT_COLUMNS, main
+from farahidi.cli import _ANALYZE_COLUMNS, _INFLECTED_COLUMNS, _TEXT_COLUMNS, main
 
 
 # --------------------------------------------------------------------- analyze
@@ -49,7 +49,28 @@ def test_analyze_json(capsys):
     assert len(lines) == 1
     obj = json.loads(lines[0])
     assert obj["word"] == "كتاب"
-    assert obj["analyses"] and obj["analyses"][0]["lemma"]
+    a = obj["analyses"][0]
+    assert a["lemma"] and a["pos"] == "اسم" and isinstance(a["score"], float)
+    assert a["inflections"] and set(a["inflections"][0]) == {"diacritized", "case", "mood", "state", "score"}
+    assert "case" not in a
+
+
+def test_analyze_collapses_inflections_by_default(capsys):
+    assert main(["analyze", "عندليب"]) == 0
+    assert len(capsys.readouterr().out.splitlines()) == 1
+
+
+def test_analyze_inflections_flag_expands(capsys):
+    assert main(["analyze", "عندليب", "--inflections", "-f", "csv"]) == 0
+    reader = list(csv.reader(io.StringIO(capsys.readouterr().out)))
+    assert tuple(reader[0]) == _INFLECTED_COLUMNS
+    assert len(reader) == 6  # header + 5 case variants
+    case_col = _INFLECTED_COLUMNS.index("case")
+    assert {row[case_col] for row in reader[1:]} == {"مرفوع", "منصوب", "مجرور"}
+    assert main(["analyze", "عندليب", "-i", "--json"]) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert len(obj["analyses"]) == 5
+    assert all("inflections" not in a and a["inflected"] and a["case"] for a in obj["analyses"])
 
 
 def test_json_flag_is_alias(capsys):
@@ -85,10 +106,11 @@ def test_text_csv(capsys):
 
 
 def test_text_json(capsys):
-    assert main(["text", "ذهب الولد", "--format", "json"]) == 0
+    assert main(["text", "ذهب الولد إلى", "--format", "json"]) == 0
     objs = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert [o["token"] for o in objs] == ["ذهب", "الولد"]
+    assert [o["token"] for o in objs] == ["ذهب", "الولد", "إلى"]
     assert all(o["analyzed"] for o in objs)
+    assert objs[2]["root"] is None  # particle: no root
 
 
 # ----------------------------------------------------------------------- stdin

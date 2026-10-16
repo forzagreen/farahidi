@@ -5,18 +5,22 @@ exceptional analyzers.
 The pipeline per word: normalize → exceptional lookup (short-circuits) →
 segment into proclitic+stem+enclitic → for each segment run the category
 analyzers (gated by clitic ``classe``) → resolve the ``Formulas`` join → assemble
-:class:`~farahidi.models.Analysis` candidates. Results are returned in pipeline
-order; :func:`farahidi.analyze` sorts them by ``priority``.
+:class:`RawAnalysis` records, one per *(reading × إعراب ending)* exactly as the
+Java ``Result`` list (this is what the golden parity suite checks).
+:meth:`Analyzer.analyze` then collapses them into the public
+:class:`~farahidi.models.Analysis` objects (see :mod:`farahidi.morphology`).
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from . import normalize as N
-from .clitics import Segment, get_lists_segment
+from .clitics import Clitic, Segment, get_lists_segment
 from .lexicon import Lexicon
-from .models import Analysis
+from .models import Affix, Analysis, Inflection
+from .morphology import collapse, parse_pos_label
 from .pos import decode_noun, decode_verb
 from .vowelize import vowelize
 
@@ -26,6 +30,44 @@ _NUMBERED = "123456789"
 def _fmt_freq(value: float) -> str:
     """Match Java ``DecimalFormat`` with 10 fixed fraction digits."""
     return f"{value:.10f}"
+
+
+@dataclass(frozen=True, slots=True)
+class RawAnalysis:
+    """Internal: AlKhalil's 12-field ``Result`` record for one *(reading ×
+    إعراب ending)*, plus the structured pieces the public model is built from.
+
+    The twelve string fields are byte-for-byte what the Java reference emits
+    (``"-"`` = not applicable, ``"#"`` = absent clitic, ``priority`` formatted to
+    10 decimals) and are what ``tests/test_golden.py`` compares. ``morph`` is the
+    :class:`Analysis` *template* of the reading (``score`` 0, no inflections) and
+    ``inflection`` this record's realization; :func:`farahidi.morphology.collapse`
+    groups records by ``morph``.
+    """
+
+    voweled_word: str
+    proclitic: str
+    stem: str
+    part_of_speech: str
+    diac_pattern_stem: str
+    pattern_stem: str
+    lemma: str
+    pattern_lemma: str
+    root: str
+    case_or_mood: str
+    enclitic: str
+    priority: str
+    morph: Analysis
+    inflection: Inflection
+
+
+def _opt(value: str | None) -> str | None:
+    """AlKhalil's ``"-"`` / ``"#"`` / empty placeholders → ``None``."""
+    return None if value in (None, "", "-", "#") else value
+
+
+def _clitic_affixes(clitic: Clitic) -> tuple[Affix, ...]:
+    return (Affix(clitic.voweledform, _opt(clitic.desc)),) if clitic.voweledform else ()
 
 
 def _make_analysis(
@@ -41,13 +83,72 @@ def _make_analysis(
     casemood: str,
     enclitic: str,
     priority: str,
-) -> Analysis:
-    """Replicates the AlKhalil ``Result`` constructor, including its stem
-    recomputation from root + diac pattern."""
+    *,
+    features: dict[str, str | None],
+    emphatic: bool | None = None,
+    state: str | None = None,
+    proclitics: tuple[Affix, ...] = (),
+    prefixes: tuple[Affix, ...] = (),
+    suffixes: tuple[Affix, ...] = (),
+    enclitics: tuple[Affix, ...] = (),
+) -> RawAnalysis:
+    """Replicates the AlKhalil ``Result`` constructor (including its stem
+    recomputation from root + diac pattern) and derives the public-model pieces.
+
+    ``features`` carries ``pos``/``type``/``tense``/``gender``/``number``/
+    ``person``/``pronoun``/``voice``/``transitivity``/``augmentation`` (missing
+    keys → ``None``). A record with an إعراب ending (``casemood != "-"``) has that
+    ending stripped from the morphological ``diacritized``/``stem``/``pattern``;
+    the full form is kept on the :class:`Inflection`.
+    """
     dps = N.remove_last_diacritics(diac_pattern_stem)
     if root not in ("#", "-") and dps != "-":
         stem = N.word_from_root_and_pattern(root, dps)
-    return Analysis(
+    cm = _opt(casemood)
+    main_pos = features["pos"]
+    pattern = _opt(pattern_stem)
+    if cm is not None:
+        voweled_m = N.strip_case_ending(voweled)
+        stem_m = N.strip_case_ending(stem)
+        # In a pattern the alif after tanween fatḥ is only the tanween's carrier
+        # (فِعَالًا → فِعَال), unlike in the word, where the letter is kept.
+        if pattern is not None:
+            pattern = N.strip_case_ending(pattern[:-1] if pattern.endswith("ًا") else pattern)
+    else:
+        voweled_m, stem_m = voweled, stem
+    morph = Analysis(
+        diacritized=voweled_m,
+        lemma=lemma,
+        root=_opt(root),
+        stem=stem_m,
+        pattern=pattern,
+        lemma_pattern=_opt(pattern_lemma),
+        pos=main_pos,
+        type=features.get("type"),
+        tense=features.get("tense"),
+        gender=features.get("gender"),
+        number=features.get("number"),
+        person=features.get("person"),
+        pronoun=features.get("pronoun"),
+        voice=features.get("voice"),
+        transitivity=features.get("transitivity"),
+        augmentation=features.get("augmentation"),
+        emphatic=emphatic,
+        proclitics=proclitics,
+        prefixes=prefixes,
+        suffixes=suffixes,
+        enclitics=enclitics,
+        score=0.0,
+        inflections=(),
+    )
+    inflection = Inflection(
+        diacritized=voweled,
+        case=cm if main_pos != "فعل" else None,
+        mood=cm if main_pos == "فعل" else None,
+        state=state,
+        score=float(priority),
+    )
+    return RawAnalysis(
         voweled_word=voweled,
         proclitic=proclitic,
         stem=stem,
@@ -60,12 +161,14 @@ def _make_analysis(
         case_or_mood=casemood,
         enclitic=enclitic,
         priority=priority,
+        morph=morph,
+        inflection=inflection,
     )
 
 
 class Analyzer:
-    """Reusable analyzer. Construct once and call :meth:`process_token` /
-    :meth:`analyze` repeatedly; the bundled tables load lazily and are shared."""
+    """Reusable Layer-1 analyzer. Construct once and call :meth:`analyze`
+    repeatedly; the bundled tables load lazily and are shared."""
 
     def __init__(self) -> None:
         self.lex = Lexicon()
@@ -74,12 +177,16 @@ class Analyzer:
 
     # ------------------------------------------------------------------ API
     def analyze(self, word: str) -> list[Analysis]:
-        """All analyses of ``word``, sorted by ``priority`` (descending)."""
-        results = self.process_token(word)
-        return sorted(results, key=lambda a: a.priority, reverse=True)
+        """All morphological analyses of ``word``, best ``score`` first.
 
-    def process_token(self, word: str) -> list[Analysis]:
-        """Port of ``processToken`` — analyses in pipeline order (unsorted)."""
+        Readings that differ only in their إعراب ending are returned once, with
+        the endings nested under :attr:`~farahidi.models.Analysis.inflections`.
+        """
+        return collapse(self._process_token(word))
+
+    def _process_token(self, word: str) -> list[RawAnalysis]:
+        """Port of ``processToken`` — one raw record per *(reading × ending)*,
+        in pipeline order (unsorted), exactly as the Java reference."""
         lex = self.lex
         unvoweled = N.remove_all_diacritics(word)
         normalized = N.correct_erreur(word)
@@ -89,7 +196,7 @@ class Analyzer:
             return exc
 
         segments = get_lists_segment(lex, unvoweled)
-        results: list[Analysis] = []
+        results: list[RawAnalysis] = []
         for seg in segments:
             results.extend(self._analyze_propernoun(normalized, unvoweled, seg))
             results.extend(
@@ -107,17 +214,19 @@ class Analyzer:
 
     # -------------------------------------------------------------- helpers
     @staticmethod
-    def _filtre_hamza(normalized_word: str, results: list[Analysis]) -> list[Analysis]:
+    def _filtre_hamza(normalized_word: str, results: list[RawAnalysis]) -> list[RawAnalysis]:
         hamza = N.type_hamza(normalized_word)
         if hamza == "":
             return results
         return [r for r in results if hamza in r.stem]
 
     # ----------------------------------------------------------- exceptional
-    def _analyze_exceptional(self, normalized_word: str, unvoweled_word: str) -> list[Analysis]:
+    def _analyze_exceptional(self, normalized_word: str, unvoweled_word: str) -> list[RawAnalysis]:
         ew = self.lex.map("exceptional").get(unvoweled_word)
         if ew is None:
             return []
+        proc = _opt(ew["proclitic"])
+        enc = _opt(ew["enclitic"])
         return [
             _make_analysis(
                 ew["voweledform"],
@@ -132,13 +241,16 @@ class Analyzer:
                 "-",
                 ew["enclitic"],
                 "1",
+                features=parse_pos_label(ew["pos"]),
+                proclitics=(Affix(proc),) if proc else (),
+                enclitics=(Affix(enc),) if enc else (),
             )
         ]
 
     # ------------------------------------------------------------- toolwords
     def _analyze_toolwords(
         self, normalized_word: str, unvoweled_word: str, seg: Segment
-    ) -> list[Analysis]:
+    ) -> list[RawAnalysis]:
         lex = self.lex
         stem = seg.stem
         unv = lex.map("toolwords_unvoweled").get(stem)
@@ -148,7 +260,7 @@ class Analyzer:
         enc = seg.enclitic
         voweled_list = lex.list("toolwords_voweled")
         pos_list = lex.list("toolwords_pos")
-        out: list[Analysis] = []
+        out: list[RawAnalysis] = []
         for sid in unv.split(" "):
             tw = voweled_list[int(sid) - 1]
             proc_class = tw["procClass"] or ""
@@ -196,6 +308,9 @@ class Analyzer:
                         "-",
                         sf,
                         "0.0001100101",
+                        features=parse_pos_label(type_str),
+                        proclitics=_clitic_affixes(proc),
+                        enclitics=_clitic_affixes(enc),
                     )
                 )
         return out
@@ -203,7 +318,7 @@ class Analyzer:
     # ------------------------------------------------------------ propernoun
     def _analyze_propernoun(
         self, normalized_word: str, unvoweled_word: str, seg: Segment
-    ) -> list[Analysis]:
+    ) -> list[RawAnalysis]:
         proc_class = seg.proclitic.classe
         enc_class = seg.enclitic.classe
         if "V" in proc_class or "V" in enc_class:
@@ -217,7 +332,7 @@ class Analyzer:
         casemood_list = lex.list("propernoun_casemood")
         proc = seg.proclitic
         enc = seg.enclitic
-        out: list[Analysis] = []
+        out: list[RawAnalysis] = []
         for sid in unv.split(" "):
             ipn = int(sid)
             if ipn > len(voweled_list):
@@ -280,6 +395,15 @@ class Analyzer:
                         cas,
                         sf_out,
                         "0.01100101",
+                        features={
+                            "pos": pos["main"],
+                            "type": _opt(pos["type"]),
+                            "gender": _opt(pos["gender"]),
+                            "number": _opt(pos["number"]),
+                        },
+                        state=_opt(pos.get("definit")),
+                        proclitics=_clitic_affixes(proc),
+                        enclitics=_clitic_affixes(enc),
                     )
                 )
         return out
@@ -397,7 +521,7 @@ class Analyzer:
         return out
 
     # -------------------------------------------------------------- verbal
-    def _analyze_verbal(self, normalized_word: str, seg: Segment) -> list[Analysis]:
+    def _analyze_verbal(self, normalized_word: str, seg: Segment) -> list[RawAnalysis]:
         stem = seg.stem
         proc_class = seg.proclitic.classe
         enc_class = seg.enclitic.classe
@@ -406,7 +530,7 @@ class Analyzer:
         lex = self.lex
         solutions = self._possible_solutions(seg, "Verbs", self._verb_cache)
         imap = self._all_root_formulas(solutions)
-        out: list[Analysis] = []
+        out: list[RawAnalysis] = []
         len_stem = len(seg.stem)
         for s_root, formulas in imap.items():
             for sol in formulas:
@@ -431,7 +555,7 @@ class Analyzer:
                     feats["Person2"], cm, feats["Transitivity"],
                 ):
                     continue
-                sol_arr = self._verbal_interpret(
+                proclitic_str, enclitic_str, prefix, suffix = self._verbal_interpret(
                     seg, feats["Type"], feats["Person"], feats["Person2"],
                     feats["Emphasized"], cm,
                 )
@@ -440,8 +564,22 @@ class Analyzer:
                 priority = _fmt_freq(freq)
                 out.append(
                     _make_analysis(
-                        voweled_word, sol_arr[0], stem_h, feats["partofspeech"], diac,
-                        canonic_pattern, lemma, lemmapattern, s_root, cm, sol_arr[3], priority,
+                        voweled_word, proclitic_str, stem_h, feats["partofspeech"], diac,
+                        canonic_pattern, lemma, lemmapattern, s_root, cm, enclitic_str, priority,
+                        features={
+                            "pos": feats["Main"],
+                            "tense": feats["Type"],
+                            "voice": feats["Voice"],
+                            "person": feats["Person"],
+                            "pronoun": feats["Person2"],
+                            "transitivity": feats["Transitivity"],
+                            "augmentation": feats["Augmented"],
+                        },
+                        emphatic=feats["Emphasized"] == "مؤكد",
+                        proclitics=_clitic_affixes(seg.proclitic),
+                        prefixes=(Affix(*prefix),) if prefix else (),
+                        suffixes=(Affix(*suffix),) if suffix else (),
+                        enclitics=_clitic_affixes(seg.enclitic),
                     )
                 )
         return out
@@ -469,94 +607,104 @@ class Analyzer:
         return True
 
     def _verbal_interpret(self, seg, type_, person, person2, emphasized, casemood):
-        result = [""] * 7
+        """Port of ``VerbalAnalyzerImpl``'s proclitic/enclitic column assembly.
+
+        Returns ``(proclitic_str, enclitic_str, prefix, suffix)``: the two Java
+        column strings (``form|desc`` items joined by ``+``: clitic then the
+        مضارع prefix; subject suffix then clitic) plus the inflectional prefix /
+        suffix as ``(form, desc)`` tuples (``None`` when absent)."""
         if seg.proclitic.voweledform == "":
             prefix1 = "#"
-            result[5] = "#"
         else:
             prefix1 = seg.proclitic.voweledform + "|" + (seg.proclitic.desc or "")
-            result[5] = seg.proclitic.voweledform
         if seg.enclitic.voweledform == "":
             suffix1 = "#"
-            result[6] = "#"
         else:
             suffix1 = seg.enclitic.voweledform + "|" + (seg.enclitic.desc or "")
-            result[6] = seg.enclitic.voweledform
         prefix = self._proclitic_value(type_, person, person2)
         suffix = self._enclitic_value(type_, person, person2, emphasized, casemood)
-        result[4] = "2"
-        if prefix != "":
-            result[0] = prefix if prefix1 == "#" else prefix1 + "+" + prefix
+        if prefix is not None:
+            p = "|".join(prefix)
+            proclitic_str = p if prefix1 == "#" else prefix1 + "+" + p
         else:
-            result[0] = prefix1
-        if suffix != "":
-            result[3] = suffix if suffix1 == "#" else suffix + "+" + suffix1
+            proclitic_str = prefix1
+        if suffix is not None:
+            s = "|".join(suffix)
+            enclitic_str = s if suffix1 == "#" else s + "+" + suffix1
         else:
-            result[3] = suffix1
-        return result
+            enclitic_str = suffix1
+        return proclitic_str, enclitic_str, prefix, suffix
 
     @staticmethod
-    def _proclitic_value(type_, person, person2):
+    def _proclitic_value(type_, person, person2) -> tuple[str, str] | None:
+        """The مضارع prefix letter and its label."""
         if type_ == "مضارع":
             if person == "مخاطب":
-                return "ت|حرف المضارعة"
+                return ("ت", "حرف المضارعة")
             if person2 == "أنا":
-                return "أ|حرف المضارعة"
+                return ("أ", "حرف المضارعة")
             if person2 == "نحن":
-                return "ن|حرف المضارعة"
+                return ("ن", "حرف المضارعة")
             if person2 == "هي":
-                return "ت|تاء الغائبة"
+                return ("ت", "تاء الغائبة")
             if person2 == "هما(ة)":
-                return "ت|حرف المضارعة"
-            return "ي|حرف المضارعة"
-        return ""
+                return ("ت", "حرف المضارعة")
+            return ("ي", "حرف المضارعة")
+        return None
 
     @staticmethod
-    def _enclitic_value(type_, person, person2, emphasized, casemood):
+    def _enclitic_value(type_, person, person2, emphasized, casemood) -> tuple[str, str] | None:
+        """The subject / emphasis suffix and its label."""
         if emphasized == "مؤكد":
-            return "ن|نون التوكيد" if person == "مخاطب" else ""
+            return ("ن", "نون التوكيد") if person == "مخاطب" else None
         if type_ == "أمر":
             if person == "مخاطب" and person2 != "أنتَ":
                 if person2 == "أنتِ":
-                    return "ي|ياء المخاطبة"
+                    return ("ي", "ياء المخاطبة")
                 if person2 == "أنتما":
-                    return "ا|ألف المثنى"
+                    return ("ا", "ألف المثنى")
                 if person2 == "أنتم":
-                    return "وا|واو الجماعة"
+                    return ("وا", "واو الجماعة")
                 if person2 == "أنتن":
-                    return "ن|نون النسوة"
-                return ""
-            return ""
+                    return ("ن", "نون النسوة")
+                return None
+            return None
         if type_ == "ماض":
             table = {
-                "أنا": "ت|تاء المتكلم",
-                "نحن": "نا|نون المتكلمين",
-                "أنتَ": "ت|تاء المخاطب",
-                "أنتِ": "ت|تاء المخاطبة",
-                "أنتما": "تما|تاء المخاطبين",
-                "أنتم": "تم|تاء المخاطبين",
-                "أنتن": "تن|تاء المخاطبات",
-                "هي": "ت|تاء التأنيث الساكنة",
-                "هما": "ا|ألف الاثنين",
-                "هما(ة)": "تا|تاء التأنيت وألف الاثنين",
-                "هم": "وا|واو الجماعة",
-                "هن": "ن|نون النسوة",
+                "أنا": ("ت", "تاء المتكلم"),
+                "نحن": ("نا", "نون المتكلمين"),
+                "أنتَ": ("ت", "تاء المخاطب"),
+                "أنتِ": ("ت", "تاء المخاطبة"),
+                "أنتما": ("تما", "تاء المخاطبين"),
+                "أنتم": ("تم", "تاء المخاطبين"),
+                "أنتن": ("تن", "تاء المخاطبات"),
+                "هي": ("ت", "تاء التأنيث الساكنة"),
+                "هما": ("ا", "ألف الاثنين"),
+                "هما(ة)": ("تا", "تاء التأنيت وألف الاثنين"),
+                "هم": ("وا", "واو الجماعة"),
+                "هن": ("ن", "نون النسوة"),
             }
-            return table.get(person2, "")
+            return table.get(person2)
         if type_ == "مضارع":
             if person2 in ("هن", "أنتن"):
-                return "ن|نون النسوة"
+                return ("ن", "نون النسوة")
             if person2 == "أنتِ":
-                return "ين|ياء المخاطبة والنون علامة الرفع" if casemood == "مرفوع" else "ي|ياء المخاطبة"
+                if casemood == "مرفوع":
+                    return ("ين", "ياء المخاطبة والنون علامة الرفع")
+                return ("ي", "ياء المخاطبة")
             if person2 in ("أنتما", "هما(ة)", "هما"):
-                return "ان|ألف المثنى والنون علامة الرفع" if casemood == "مرفوع" else "ا|ألف المثنى"
+                if casemood == "مرفوع":
+                    return ("ان", "ألف المثنى والنون علامة الرفع")
+                return ("ا", "ألف المثنى")
             if person2 in ("أنتم", "هم"):
-                return "ون|واو الجماعة والنون علامة الرفع" if casemood == "مرفوع" else "وا|واو الجماعة"
-            return ""
-        return ""
+                if casemood == "مرفوع":
+                    return ("ون", "واو الجماعة والنون علامة الرفع")
+                return ("وا", "واو الجماعة")
+            return None
+        return None
 
     # -------------------------------------------------------------- nominal
-    def _analyze_nominal(self, normalized_word: str, seg: Segment) -> list[Analysis]:
+    def _analyze_nominal(self, normalized_word: str, seg: Segment) -> list[RawAnalysis]:
         stem = seg.stem
         proc_class = seg.proclitic.classe
         enc_class = seg.enclitic.classe
@@ -565,7 +713,7 @@ class Analyzer:
         lex = self.lex
         solutions = self._possible_solutions(seg, "Nouns", self._noun_cache)
         imap = self._all_root_formulas(solutions)
-        out: list[Analysis] = []
+        out: list[RawAnalysis] = []
         len_stem = len(seg.stem)
         for s_root, formulas in imap.items():
             for sol in formulas:
@@ -600,14 +748,12 @@ class Analyzer:
                     continue
                 if not self._valid_nominal(seg, cm, voweled_word, normalized_word):
                     continue
-                sol_arr, possible = self._nominal_interpret(
+                proclitic_str, enclitic_str, state, possible, suffixes = self._nominal_interpret(
                     seg, feats["Number"], feats["Gender"], feats["Definit"], canonic_pattern
                 )
                 if not possible:
                     continue
-                pos_str = "|".join(
-                    [feats["Main"], feats["Type"], feats["Number"], feats["Gender"], sol_arr[2]]
-                )
+                pos_str = "|".join([feats["Main"], feats["Type"], feats["Number"], feats["Gender"], state])
                 stem_h = N.correct_stem_hamza(seg.stem)
                 freq = (diac_freq + canonic_freq + lemma_freq + lemmapattern_freq + pos_freq) / 5.0
                 priority = _fmt_freq(freq)
@@ -620,8 +766,18 @@ class Analyzer:
                     t = "مجرور"
                 out.append(
                     _make_analysis(
-                        voweled_word, sol_arr[0], stem_h, pos_str, diac, canonic_pattern,
-                        lemma, lemmapattern, s_root, t or cm, sol_arr[3], priority,
+                        voweled_word, proclitic_str, stem_h, pos_str, diac, canonic_pattern,
+                        lemma, lemmapattern, s_root, t or cm, enclitic_str, priority,
+                        features={
+                            "pos": feats["Main"],
+                            "type": feats["Type"],
+                            "gender": feats["Gender"],
+                            "number": feats["Number"],
+                        },
+                        state=_opt(state),
+                        proclitics=_clitic_affixes(seg.proclitic),
+                        suffixes=tuple(Affix(form, desc) for form, desc in suffixes),
+                        enclitics=_clitic_affixes(seg.enclitic),
                     )
                 )
         return out
@@ -642,87 +798,85 @@ class Analyzer:
 
     @staticmethod
     def _nominal_interpret(seg, number, gender, definit, canonic_pattern):
+        """Port of ``NominalAnalyzerImpl``'s proclitic/enclitic column assembly.
+
+        Returns ``(proclitic_str, enclitic_str, state, possible, suffixes)``: the
+        two Java column strings (``form: desc`` items joined by `` + ``: the
+        feminine / number suffixes then the enclitic), the definiteness state
+        that ends the POS string, whether the reading is admissible, and the
+        suffixes as ``(form, desc)`` tuples."""
         un_diac = N.remove_all_diacritics(canonic_pattern)
-        result = [""] * 7
         proc_class = seg.proclitic.classe
-        prefix = ""
-        suffix = ""
+        suffixes: list[tuple[str, str]] = []
         passe = True
         possible = True
         if seg.proclitic.voweledform == "":
-            result[0] = "#"
-            result[5] = "#"
+            proclitic_str = "#"
         else:
-            result[0] = seg.proclitic.voweledform + ": " + (seg.proclitic.desc or "")
-            result[5] = seg.proclitic.voweledform
+            proclitic_str = seg.proclitic.voweledform + ": " + (seg.proclitic.desc or "")
         if seg.enclitic.voweledform == "":
-            result[3] = "#"
-            result[6] = "#"
+            enclitic_str = "#"
         else:
-            result[3] = seg.enclitic.voweledform + ": " + (seg.enclitic.desc or "")
-            result[6] = seg.enclitic.voweledform
+            enclitic_str = seg.enclitic.voweledform + ": " + (seg.enclitic.desc or "")
         st = seg.stem
+        ta = ("ة", "تاء التأنيث")
         if gender == "مؤنث" and number == "مفرد" and st.endswith("ة"):
-            suffix = "ة: تاء التأنيث"
+            suffixes = [ta]
             passe = True
         elif gender == "مؤنث" and number == "مثنى":
             if st.endswith("تان"):
-                suffix = "ة: تاء التأنيث + ان: علامة الإعراب"
+                suffixes = [ta, ("ان", "علامة الإعراب")]
                 passe = True
             elif st.endswith("تين"):
-                suffix = "ة: تاء التأنيث + ين: علامة الإعراب"
+                suffixes = [ta, ("ين", "علامة الإعراب")]
                 passe = True
             elif st.endswith("تا"):
-                suffix = "ة: تاء التأنيث + ا: علامة الإعراب"
+                suffixes = [ta, ("ا", "علامة الإعراب")]
                 passe = False
             elif st.endswith("تي"):
-                suffix = "ة: تاء التأنيث + ي: علامة الإعراب"
+                suffixes = [ta, ("ي", "علامة الإعراب")]
                 passe = False
         elif gender == "مؤنث" and number == "جمع":
             if st.endswith("ات"):
-                suffix = "ات: تاء التأنيث"
+                suffixes = [("ات", "تاء التأنيث")]
                 passe = True
         elif gender == "مذكر" and number == "مثنى":
             if st.endswith("ان"):
-                suffix = "ان: علامة الإعراب"
+                suffixes = [("ان", "علامة الإعراب")]
                 passe = True
             elif st.endswith("ين"):
-                suffix = "ين: علامة الإعراب"
+                suffixes = [("ين", "علامة الإعراب")]
                 passe = True
             elif st.endswith("ا"):
-                suffix = "ا: علامة الإعراب"
+                suffixes = [("ا", "علامة الإعراب")]
                 passe = False
             elif st.endswith("ي"):
-                suffix = "ي: علامة الإعراب"
+                suffixes = [("ي", "علامة الإعراب")]
                 passe = False
         elif un_diac != "مفاعل" and canonic_pattern != "فَعَالِي" and gender == "مذكر" and number == "جمع":
             if st.endswith("ون"):
-                suffix = "ون: علامة الإعراب"
+                suffixes = [("ون", "علامة الإعراب")]
                 passe = True
             elif st.endswith("ين"):
-                suffix = "ين: علامة الإعراب"
+                suffixes = [("ين", "علامة الإعراب")]
                 passe = True
             elif st.endswith("و"):
-                suffix = "و: علامة الإعراب"
+                suffixes = [("و", "علامة الإعراب")]
                 passe = False
             elif st.endswith("ي"):
-                suffix = "ي: علامة الإعراب"
+                suffixes = [("ي", "علامة الإعراب")]
                 passe = False
         if proc_class in ("N1", "N2", "N3", "N5"):
             if passe:
-                result[2] = "معرف"
+                state = "معرف"
             else:
-                result[2] = ""
+                state = ""
                 possible = False
         else:
-            result[2] = definit
-        result[4] = "1"
-        if result[0] == "#" and prefix != "":
-            result[0] = prefix
-        elif result[0] != "#" and prefix != "":
-            result[0] = result[0] + " + " + prefix
-        if result[3] == "#" and suffix != "":
-            result[3] = suffix
-        elif result[3] != "#" and suffix != "":
-            result[3] = suffix + " + " + result[3]
-        return result, possible
+            state = definit
+        suffix = " + ".join(form + ": " + desc for form, desc in suffixes)
+        if enclitic_str == "#" and suffix != "":
+            enclitic_str = suffix
+        elif enclitic_str != "#" and suffix != "":
+            enclitic_str = suffix + " + " + enclitic_str
+        return proclitic_str, enclitic_str, state, possible, suffixes

@@ -62,6 +62,30 @@ def remove_last_diacritics(word: str) -> str:
     return _LAST_DIAC_RE.sub("", word)
 
 
+_TRAILING_DIACRITICS_RE = re.compile("[" + ALL_DIACRITICS + "]+$")
+
+
+def strip_case_ending(word: str) -> str:
+    """Drop the inflectional (إعراب) ending of a declinable word.
+
+    Removes the short vowel / tanween carried by the last letter, keeping a
+    shadda (``عَنْدَلِيبٌ`` → ``عَنْدَلِيب``, ``قَالٌّ`` → ``قَالّ``, ``يَكْتُبْ`` →
+    ``يَكْتُب``). A tanween fatḥ written before a final alif / alif maqṣūra becomes
+    a plain fatḥa, since the letter stays (``كِتَابًا`` → ``كِتَابَا``, ``فَتًى`` →
+    ``فَتَى``). Letters are never removed, so ``مُسْلِمُونَ`` → ``مُسْلِمُون``.
+    """
+    m = _TRAILING_DIACRITICS_RE.search(word)
+    if m:
+        kept = "ّ" if "ّ" in m.group(0) else ""
+        return word[: m.start()] + kept
+    if word and word[-1] in "اى":
+        m = _TRAILING_DIACRITICS_RE.search(word[:-1])
+        if m and "ً" in m.group(0):
+            kept = "ّ" if "ّ" in m.group(0) else ""
+            return word[: m.start()] + kept + "َ" + word[-1]
+    return word
+
+
 def replace_all_hamza(word: str) -> str:
     return _ALL_HAMZA_RE.sub("", word)
 
