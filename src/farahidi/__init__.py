@@ -34,7 +34,7 @@ __all__ = [
     "tokenize",
     "__version__",
 ]
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 
 @lru_cache(maxsize=1)
